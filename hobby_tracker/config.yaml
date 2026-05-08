@@ -1,0 +1,23 @@
+name: "Hobby Tracker"
+description: "What are you doing tonight? Tracks hobbies and bite-sized tasks with a suggestion engine."
+version: "2.0.0"
+slug: "hobby_tracker"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+map:
+  - data:rw
+ports:
+  3737/tcp: 3737
+ports_description:
+  3737/tcp: "Hobby Tracker"
+ingress: true
+ingress_port: 3737
+ingress_panel: true
+panel_icon: "mdi:dice-multiple"
+panel_title: "Tonight?"
+options: {}
+schema: {}

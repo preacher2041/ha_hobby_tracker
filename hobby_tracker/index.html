@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Tonight?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f11;
+      --surface:   #1a1a1f;
+      --surface2:  #242429;
+      --border:    #2e2e36;
+      --border2:   #3a3a44;
+      --text:      #e8e8ee;
+      --muted:     #6b6b7a;
+      --dim:       #4a4a58;
+      --accent:    #f0c060;
+      --green:     #60c080;
+      --red:       #e06060;
+      --blue:      #60b8f0;
+      --purple:    #7b6ef6;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', 'Segoe UI', sans-serif;
+      overscroll-behavior: none;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Scrollable content area ── */
+    .page {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 16px 100px; /* bottom padding for fixed log-row */
+    }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 0.72rem; color: var(--muted);
+      margin-bottom: 14px; padding: 7px 11px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--dim); transition: background 0.3s; flex-shrink: 0;
+    }
+    .status-dot.ok      { background: var(--green); }
+    .status-dot.err     { background: var(--red); }
+    .status-dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+    /* ── Header ── */
+    .header {
+      display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px;
+    }
+    .title {
+      font-family: 'Bebas Neue', sans-serif; font-size: 2.2rem;
+      letter-spacing: 0.04em; line-height: 1;
+    }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .date { font-size: 0.72rem; color: var(--muted); font-weight: 300; letter-spacing: 0.06em; text-transform: uppercase; }
+    .btn-config {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); font-size: 0.75rem; font-family: inherit;
+      padding: 4px 9px; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-config:hover         { border-color: var(--muted); color: var(--text); }
+    .btn-config.active        { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Suggestion bar ── */
+    .suggestion-bar {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;
+      font-size: 0.82rem; color: var(--muted);
+    }
+    .suggestion-bar .label { color: var(--accent); font-weight: 500; white-space: nowrap; }
+
+    /* ── Hobby cards ── */
+    .hobbies { display: flex; flex-direction: column; gap: 8px; }
+
+    .hobby-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden; transition: border-color 0.2s;
+    }
+    .hobby-card.open      { border-color: var(--card-color); }
+    .hobby-card.suggested { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+    .hobby-card.open.suggested { border-color: var(--card-color); }
+
+    .card-header {
+      display: flex; align-items: center; gap: 12px; padding: 13px 14px;
+      cursor: pointer; transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent; user-select: none;
+    }
+    .hobby-card.open .card-header { background: var(--surface2); }
+
+    .icon { font-size: 1.5rem; width: 36px; text-align: center; flex-shrink: 0; }
+    .card-info { flex: 1; min-width: 0; }
+    .hobby-name { font-size: 0.92rem; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .suggested-tag {
+      font-size: 0.58rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--accent); background: rgba(240,192,96,0.12);
+      border: 1px solid rgba(240,192,96,0.25); padding: 1px 5px; border-radius: 3px;
+    }
+    .last-done { font-size: 0.72rem; color: var(--muted); font-weight: 300; margin-top: 2px; }
+    .card-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .task-count { font-size: 0.7rem; color: var(--dim); font-weight: 300; font-style: italic; }
+    .task-count.has-tasks { color: var(--muted); }
+    .staleness { width: 7px; height: 7px; border-radius: 50%; }
+    .fresh  { background: var(--green); }
+    .recent { background: var(--accent); }
+    .stale  { background: var(--red); }
+    .chevron { font-size: 0.65rem; color: var(--dim); transition: transform 0.22s; display: inline-block; }
+    .hobby-card.open .chevron { transform: rotate(180deg); }
+
+    /* ── Task panel ── */
+    .task-panel { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+    .hobby-card.open .task-panel { max-height: 600px; }
+    .task-panel-inner { border-top: 1px solid var(--border); padding: 10px 12px 12px; }
+    .task-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+
+    .task-item {
+      display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+      border-radius: 6px; cursor: pointer; transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent; user-select: none;
+    }
+    .task-item:hover { background: #2a2a32; }
+    .task-check {
+      width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border2);
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; transition: all 0.15s; color: #fff;
+    }
+    .task-item.selected .task-check { background: var(--card-color, var(--purple)); border-color: var(--card-color, var(--purple)); }
+    .task-item.selected .task-check::after { content: '✓'; }
+    .task-text { font-size: 0.83rem; color: var(--text); font-weight: 300; flex: 1; line-height: 1.3; }
+    .task-item.selected .task-text { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--dim); }
+    .task-delete {
+      opacity: 0; font-size: 0.7rem; color: var(--dim); background: none; border: none;
+      cursor: pointer; padding: 2px 5px; transition: opacity 0.15s, color 0.15s; font-family: inherit;
+    }
+    .task-item:hover .task-delete { opacity: 1; }
+    .task-delete:hover { color: var(--red); }
+
+    .empty-tasks { font-size: 0.78rem; color: var(--dim); font-style: italic; padding: 6px 10px 10px; text-align: center; }
+
+    .add-task-row { display: flex; gap: 6px; align-items: center; }
+    .add-task-input {
+      flex: 1; background: #2a2a32; border: 1px solid var(--border2); border-radius: 6px;
+      padding: 7px 10px; font-family: inherit; font-size: 0.8rem; color: var(--text);
+      outline: none; transition: border-color 0.15s;
+    }
+    .add-task-input::placeholder { color: var(--dim); }
+    .add-task-input:focus { border-color: var(--card-color, var(--purple)); }
+    .btn-add {
+      background: #2a2a32; border: 1px solid var(--border2); border-radius: 6px;
+      color: var(--muted); font-size: 1rem; width: 32px; height: 32px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+    }
+    .btn-add:hover { border-color: var(--card-color, var(--purple)); color: var(--text); }
+
+    /* ── Fixed bottom log row ── */
+    .log-row {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      display: flex; gap: 8px; align-items: center;
+      padding: 12px 16px 16px;
+      background: linear-gradient(to top, var(--bg) 70%, transparent);
+    }
+    .btn-log {
+      flex: 1; background: var(--purple); color: #fff; border: none; border-radius: 8px;
+      padding: 12px 14px; font-family: inherit; font-size: 0.85rem; font-weight: 500;
+      cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(4px);
+      transition: opacity 0.2s, transform 0.2s, background 0.15s;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .btn-log.visible { opacity: 1; pointer-events: all; transform: translateY(0); }
+    .btn-log:hover { background: #9080ff; }
+    .btn-log:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-games {
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; font-family: inherit; font-size: 0.82rem;
+      color: var(--muted); cursor: pointer; transition: all 0.18s; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-games:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Config overlay ── */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 9999;
+      display: none; align-items: flex-end; justify-content: center; padding: 16px;
+    }
+    .overlay.open { display: flex; }
+    .panel {
+      background: var(--surface); border: 1px solid var(--border2); border-radius: 14px;
+      padding: 20px; width: 100%; max-width: 440px; max-height: 82vh;
+      overflow-y: auto; animation: slideUp 0.22s ease;
+    }
+    @keyframes slideUp { from{transform:translateY(24px);opacity:0} to{transform:translateY(0);opacity:1} }
+    .panel-title {
+      font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: 0.04em;
+      margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .panel-close { background: none; border: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; padding: 4px; }
+    .panel-close:hover { color: var(--text); }
+
+    .config-hobby { margin-bottom: 22px; }
+    .config-hobby-name {
+      font-size: 0.78rem; font-weight: 500; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.08em; margin-bottom: 8px; display: flex; align-items: center; gap: 7px;
+    }
+    .config-task-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .config-task-text {
+      flex: 1; font-size: 0.82rem; background: none; border: none; color: var(--text);
+      font-family: inherit; outline: none; padding: 3px 5px; border-radius: 4px;
+    }
+    .config-task-text:focus { background: #2a2a32; }
+    .config-delete { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 0.8rem; padding: 2px 5px; transition: color 0.15s; font-family: inherit; }
+    .config-delete:hover { color: var(--red); }
+    .config-add-row { display: flex; gap: 6px; margin-top: 8px; }
+    .config-add-input {
+      flex: 1; background: #2a2a32; border: 1px solid var(--border2); border-radius: 6px;
+      padding: 6px 10px; font-family: inherit; font-size: 0.8rem; color: var(--text); outline: none;
+    }
+    .config-add-input::placeholder { color: var(--dim); }
+    .config-add-input:focus { border-color: var(--purple); }
+    .config-add-btn {
+      background: var(--purple); border: none; border-radius: 6px; color: #fff;
+      font-size: 0.8rem; padding: 6px 12px; cursor: pointer; font-family: inherit; transition: background 0.15s;
+    }
+    .config-add-btn:hover { background: #9080ff; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 72px; left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface2); border: 1px solid var(--border2); border-radius: 8px;
+      padding: 10px 18px; font-size: 0.85rem; color: var(--text);
+      opacity: 0; transition: all 0.3s ease; pointer-events: none; white-space: nowrap; z-index: 99999;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<div class="page" id="page">
+  <div class="status-bar">
+    <div class="status-dot syncing" id="statusDot"></div>
+    <span id="statusText">Loading…</span>
+  </div>
+
+  <div class="header">
+    <div class="title">Tonight?</div>
+    <div class="header-right">
+      <div class="date" id="dateLabel"></div>
+      <button class="btn-config" id="btnConfig">⚙ Edit</button>
+    </div>
+  </div>
+
+  <div class="suggestion-bar">
+    <span class="label">↑ Suggested</span>
+    <span id="suggestionText">…</span>
+  </div>
+
+  <div class="hobbies" id="hobbyList"></div>
+</div>
+
+<div class="log-row" id="logRow">
+  <button class="btn-games" id="btnGames">🎮 Just games tonight</button>
+  <button class="btn-log" id="btnLog">Log session ✓</button>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="panel" id="configPanel">
+    <div class="panel-title">
+      Edit Tasks
+      <button class="panel-close" id="btnCloseConfig">✕</button>
+    </div>
+    <div id="configBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Hobby Tracker — Sidebar App
+// All API calls are relative — no hardcoded ingress slug needed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HOBBIES_META = {
+  coding:     { name: 'Side Projects',   icon: '💻', color: '#7b6ef6' },
+  dnd:        { name: 'D&D Prep',        icon: '🐉', color: '#60c080' },
+  warhammer:  { name: 'Warhammer',       icon: '🎨', color: '#e06060' },
+  homeassist: { name: 'Home Assistant',  icon: '🏠', color: '#60b8f0' },
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let _hobbies      = [];
+let _openCard     = null;
+let _selectedTask = null;
+let _toastTimer   = null;
+
+// ── Date label ────────────────────────────────────────────────────────────────
+(function() {
+  const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now    = new Date();
+  document.getElementById('dateLabel').textContent =
+    `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+})();
+
+// ── Static button wiring ──────────────────────────────────────────────────────
+document.getElementById('btnConfig').addEventListener('click', openConfig);
+document.getElementById('btnCloseConfig').addEventListener('click', closeConfig);
+document.getElementById('btnGames').addEventListener('click', pickGames);
+document.getElementById('btnLog').addEventListener('click', logSession);
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay')) closeConfig();
+});
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(`API ${method} ${path}: ${res.status}`);
+  return res.json();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function init() {
+  setStatus('syncing', 'Connecting…');
+  try {
+    const raw = await api('GET', '/hobbies');
+    _hobbies = raw.map(h => ({
+      ...h,
+      ...(HOBBIES_META[h.id] || { name: h.id, icon: '❓', color: '#888' }),
+    }));
+    setStatus('ok', 'Synced');
+    updateHobbyList();
+    updateSuggestion();
+    updateLogButton();
+  } catch (e) {
+    setStatus('err', 'Cannot reach API — is the add-on running?');
+    console.error('[HobbyTracker]', e);
+  }
+}
+
+// ── Status ────────────────────────────────────────────────────────────────────
+function setStatus(state, msg) {
+  const dot  = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  dot.className  = `status-dot ${state}`;
+  text.textContent = msg;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function daysSince(ts)      { return ts ? Math.floor((Date.now() - ts) / 86400000) : Infinity; }
+function stalenessClass(d)  { return d < 3 ? 'fresh' : d < 7 ? 'recent' : 'stale'; }
+function lastDoneLabel(ts) {
+  if (!ts) return 'Never done';
+  const d = daysSince(ts);
+  if (d === 0) return 'Done today';
+  if (d === 1) return 'Yesterday';
+  return `${d} days ago`;
+}
+function getSuggested() {
+  return _hobbies.reduce((b, h) =>
+    daysSince(h.lastDone) > daysSince(b.lastDone) ? h : b,
+    _hobbies[0]
+  );
+}
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Suggestion ────────────────────────────────────────────────────────────────
+function updateSuggestion() {
+  if (!_hobbies.length) return;
+  const s  = getSuggested();
+  const sd = daysSince(s.lastDone);
+  document.getElementById('suggestionText').textContent =
+    `${s.name} — ${sd === Infinity ? 'never done' : `${sd} day${sd !== 1 ? 's' : ''} since last session`}`;
+}
+
+// ── Log button ────────────────────────────────────────────────────────────────
+function updateLogButton() {
+  const btn = document.getElementById('btnLog');
+  if (_selectedTask) {
+    btn.textContent = `Log "${_selectedTask.taskText}" ✓`;
+    btn.classList.add('visible');
+  } else if (_openCard) {
+    const h = _hobbies.find(x => x.id === _openCard);
+    btn.textContent = `Log ${h ? h.name : ''} session ✓`;
+    btn.classList.add('visible');
+  } else {
+    btn.classList.remove('visible');
+  }
+}
+
+// ── Hobby list ────────────────────────────────────────────────────────────────
+function updateHobbyList() {
+  const container = document.getElementById('hobbyList');
+  if (!container) return;
+  const suggested = getSuggested();
+
+  container.innerHTML = _hobbies.map(h => {
+    const isOpen      = _openCard === h.id;
+    const isSuggested = h.id === suggested.id;
+    const days        = daysSince(h.lastDone);
+
+    const taskRows = h.tasks.length === 0
+      ? `<div class="empty-tasks">No tasks yet — add one below</div>`
+      : h.tasks.map(t => {
+          const isSel = _selectedTask && _selectedTask.taskId === t.id;
+          return `<div class="task-item${isSel ? ' selected' : ''}" data-task-id="${t.id}" data-hobby-id="${h.id}">
+            <div class="task-check"></div>
+            <div class="task-text">${esc(t.text)}</div>
+            <button class="task-delete" data-delete-task="${t.id}" data-hobby-id="${h.id}">✕</button>
+          </div>`;
+        }).join('');
+
+    return `
+      <div class="hobby-card${isOpen ? ' open' : ''}${isSuggested ? ' suggested' : ''}"
+           style="--card-color:${h.color}"
+           data-hobby-id="${h.id}">
+        <div class="card-header" data-toggle="${h.id}">
+          <div class="icon">${h.icon}</div>
+          <div class="card-info">
+            <div class="hobby-name">
+              ${esc(h.name)}
+              ${isSuggested ? '<span class="suggested-tag">Suggested</span>' : ''}
+            </div>
+            <div class="last-done" data-last-done="${h.id}">${lastDoneLabel(h.lastDone)}</div>
+          </div>
+          <div class="card-right">
+            <span class="task-count${h.tasks.length ? ' has-tasks' : ''}">${h.tasks.length} task${h.tasks.length !== 1 ? 's' : ''}</span>
+            <div class="staleness ${stalenessClass(days)}"></div>
+            <span class="chevron">▼</span>
+          </div>
+        </div>
+        <div class="task-panel">
+          <div class="task-panel-inner">
+            <div class="task-list" data-task-list="${h.id}">${taskRows}</div>
+            <div class="add-task-row">
+              <input class="add-task-input" data-add-hobby="${h.id}" placeholder="Quick-add a task…" />
+              <button class="btn-add" data-add-btn="${h.id}">+</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  container.onclick = e => {
+    const header = e.target.closest('[data-toggle]');
+    if (header && !e.target.closest('.task-item') && !e.target.closest('.add-task-row')) {
+      toggleCard(header.dataset.toggle); return;
+    }
+    const delBtn = e.target.closest('[data-delete-task]');
+    if (delBtn) { e.stopPropagation(); deleteTask(delBtn.dataset.deleteTask, delBtn.dataset.hobbyId); return; }
+    const taskItem = e.target.closest('[data-task-id]');
+    if (taskItem && !e.target.closest('[data-delete-task]')) {
+      selectTask(taskItem.dataset.hobbyId, taskItem.dataset.taskId, taskItem.querySelector('.task-text').textContent); return;
+    }
+    const addBtn = e.target.closest('[data-add-btn]');
+    if (addBtn) { addTask(addBtn.dataset.addBtn); return; }
+  };
+
+  container.onkeydown = e => {
+    if (e.key === 'Enter' && e.target.dataset.addHobby) addTask(e.target.dataset.addHobby);
+  };
+}
+
+// ── Interactions ──────────────────────────────────────────────────────────────
+function toggleCard(hobbyId) {
+  _openCard = _openCard === hobbyId ? null : hobbyId;
+  if (_selectedTask && _selectedTask.hobbyId !== _openCard) _selectedTask = null;
+  document.querySelectorAll('.hobby-card').forEach(card => {
+    card.classList.toggle('open', card.dataset.hobbyId === _openCard);
+  });
+  updateLogButton();
+}
+
+function selectTask(hobbyId, taskId, taskText) {
+  const tid = parseInt(taskId);
+  if (_selectedTask && _selectedTask.taskId === tid) {
+    _selectedTask = null;
+  } else {
+    _selectedTask = { hobbyId, taskId: tid, taskText };
+    _openCard = hobbyId;
+  }
+  document.querySelectorAll('.task-item').forEach(el => {
+    el.classList.toggle('selected', parseInt(el.dataset.taskId) === (_selectedTask ? _selectedTask.taskId : -1));
+  });
+  updateLogButton();
+}
+
+async function deleteTask(taskId, hobbyId) {
+  try {
+    await api('DELETE', `/tasks/${taskId}`);
+    const hobby = _hobbies.find(h => h.id === hobbyId);
+    if (hobby) hobby.tasks = hobby.tasks.filter(t => t.id !== parseInt(taskId));
+    if (_selectedTask && _selectedTask.taskId === parseInt(taskId)) _selectedTask = null;
+    refreshTaskList(hobbyId);
+    updateLogButton();
+  } catch (e) {
+    setStatus('err', 'Failed to delete task');
+    console.error('[HobbyTracker]', e);
+  }
+}
+
+async function addTask(hobbyId) {
+  const input = document.querySelector(`[data-add-hobby="${hobbyId}"]`);
+  const text  = input ? input.value.trim() : '';
+  if (!text) return;
+  try {
+    const newTask = await api('POST', `/hobbies/${hobbyId}/tasks`, { text });
+    const hobby   = _hobbies.find(h => h.id === hobbyId);
+    if (hobby) hobby.tasks.push({ id: newTask.id, text: newTask.text });
+    if (input) input.value = '';
+    refreshTaskList(hobbyId);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-add-hobby="${hobbyId}"]`);
+      if (el) el.focus();
+    }, 30);
+  } catch (e) {
+    setStatus('err', 'Failed to add task');
+    console.error('[HobbyTracker]', e);
+  }
+}
+
+function refreshTaskList(hobbyId) {
+  const hobby = _hobbies.find(h => h.id === hobbyId);
+  if (!hobby) return;
+  const listEl = document.querySelector(`[data-task-list="${hobbyId}"]`);
+  if (!listEl) return;
+  listEl.innerHTML = hobby.tasks.length === 0
+    ? `<div class="empty-tasks">No tasks yet — add one below</div>`
+    : hobby.tasks.map(t => {
+        const isSel = _selectedTask && _selectedTask.taskId === t.id;
+        return `<div class="task-item${isSel ? ' selected' : ''}" data-task-id="${t.id}" data-hobby-id="${hobbyId}">
+          <div class="task-check"></div>
+          <div class="task-text">${esc(t.text)}</div>
+          <button class="task-delete" data-delete-task="${t.id}" data-hobby-id="${hobbyId}">✕</button>
+        </div>`;
+      }).join('');
+
+  const card = document.querySelector(`.hobby-card[data-hobby-id="${hobbyId}"]`);
+  if (card) {
+    const countEl = card.querySelector('.task-count');
+    if (countEl) {
+      countEl.textContent = `${hobby.tasks.length} task${hobby.tasks.length !== 1 ? 's' : ''}`;
+      countEl.classList.toggle('has-tasks', hobby.tasks.length > 0);
+    }
+  }
+}
+
+async function logSession() {
+  const btn = document.getElementById('btnLog');
+  if (btn) btn.disabled = true;
+  let msg;
+  try {
+    if (_selectedTask) {
+      const { hobbyId, taskId, taskText } = _selectedTask;
+      const h = _hobbies.find(x => x.id === hobbyId);
+      await api('POST', `/hobbies/${hobbyId}/log-task/${taskId}`);
+      h.lastDone = Date.now();
+      h.tasks    = h.tasks.filter(t => t.id !== taskId);
+      msg = `${h.icon} Done: "${taskText}"`;
+      _selectedTask = null;
+      _openCard     = null;
+      refreshTaskList(hobbyId);
+      updateLastDone(hobbyId);
+    } else if (_openCard) {
+      const h = _hobbies.find(x => x.id === _openCard);
+      await api('POST', `/hobbies/${_openCard}/log`);
+      h.lastDone = Date.now();
+      msg = `${h.icon} ${h.name} session logged. Nice one!`;
+      updateLastDone(_openCard);
+      _openCard = null;
+    }
+    updateSuggestion();
+    document.querySelectorAll('.hobby-card').forEach(card => {
+      card.classList.toggle('open', card.dataset.hobbyId === _openCard);
+    });
+  } catch (e) {
+    setStatus('err', 'Failed to log session');
+    console.error('[HobbyTracker]', e);
+  }
+  if (btn) btn.disabled = false;
+  updateLogButton();
+  if (msg) showToast(msg);
+}
+
+function updateLastDone(hobbyId) {
+  const hobby = _hobbies.find(h => h.id === hobbyId);
+  if (!hobby) return;
+  const el = document.querySelector(`[data-last-done="${hobbyId}"]`);
+  if (el) el.textContent = lastDoneLabel(hobby.lastDone);
+  const card = document.querySelector(`.hobby-card[data-hobby-id="${hobbyId}"]`);
+  if (card) {
+    const dot = card.querySelector('.staleness');
+    if (dot) dot.className = `staleness ${stalenessClass(daysSince(hobby.lastDone))}`;
+  }
+}
+
+function pickGames() {
+  _selectedTask = null;
+  _openCard     = null;
+  document.querySelectorAll('.hobby-card').forEach(c => c.classList.remove('open'));
+  document.querySelectorAll('.task-item').forEach(t => t.classList.remove('selected'));
+  updateLogButton();
+  showToast('🎮 Fair enough. Enjoy the game!');
+}
+
+// ── Config panel ──────────────────────────────────────────────────────────────
+function openConfig() {
+  renderConfigPanel();
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('btnConfig').classList.add('active');
+}
+
+function closeConfig() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('btnConfig').classList.remove('active');
+}
+
+function renderConfigPanel() {
+  const body = document.getElementById('configBody');
+  body.innerHTML = _hobbies.map(h => `
+    <div class="config-hobby">
+      <div class="config-hobby-name"><span>${h.icon}</span><span style="color:${h.color}">${esc(h.name)}</span></div>
+      ${h.tasks.map(t => `
+        <div class="config-task-item">
+          <input class="config-task-text" data-task-id="${t.id}" value="${esc(t.text)}" />
+          <button class="config-delete" data-cfg-delete="${t.id}" data-hobby-id="${h.id}">✕</button>
+        </div>`).join('')}
+      <div class="config-add-row">
+        <input class="config-add-input" data-cfg-add-hobby="${h.id}" placeholder="New task…" />
+        <button class="config-add-btn" data-cfg-add-btn="${h.id}">Add</button>
+      </div>
+    </div>`).join('');
+
+  body.onclick = async e => {
+    const delBtn = e.target.closest('[data-cfg-delete]');
+    if (delBtn) {
+      await deleteTask(delBtn.dataset.cfgDelete, delBtn.dataset.hobbyId);
+      renderConfigPanel(); return;
+    }
+    const addBtn = e.target.closest('[data-cfg-add-btn]');
+    if (addBtn) {
+      const hobbyId = addBtn.dataset.cfgAddBtn;
+      const input   = body.querySelector(`[data-cfg-add-hobby="${hobbyId}"]`);
+      if (!input || !input.value.trim()) return;
+      // Temporarily wire the quick-add input so addTask() can find it
+      input.dataset.addHobby = hobbyId;
+      await addTask(hobbyId);
+      delete input.dataset.addHobby;
+      renderConfigPanel();
+    }
+  };
+
+  body.onkeydown = async e => {
+    if (e.key === 'Enter' && e.target.dataset.cfgAddHobby) {
+      const hobbyId = e.target.dataset.cfgAddHobby;
+      e.target.dataset.addHobby = hobbyId;
+      await addTask(hobbyId);
+      delete e.target.dataset.addHobby;
+      renderConfigPanel();
+    }
+  };
+
+  body.onchange = async e => {
+    const input = e.target.closest('[data-task-id]');
+    if (input && input.value.trim()) {
+      try {
+        await api('PATCH', `/tasks/${input.dataset.taskId}`, { text: input.value.trim() });
+        const taskId = parseInt(input.dataset.taskId);
+        _hobbies.forEach(h => {
+          const t = h.tasks.find(t => t.id === taskId);
+          if (t) t.text = input.value.trim();
+        });
+        refreshTaskList(_hobbies.find(h => h.tasks.some(t => t.id === taskId))?.id);
+      } catch (e) {
+        setStatus('err', 'Failed to update task');
+      }
+    }
+  };
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  if (_toastTimer) clearTimeout(_toastTimer);
+  t.textContent = msg;
+  t.classList.add('show');
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── Go ────────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
