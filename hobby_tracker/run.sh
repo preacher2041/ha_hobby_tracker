@@ -1,2 +1,2 @@
 #!/usr/bin/with-contenv bashio
-exec node /app/server.js
+exec node --experimental-sqlite /app/server.js

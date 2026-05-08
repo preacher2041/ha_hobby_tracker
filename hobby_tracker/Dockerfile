@@ -1,5 +1,4 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+FROM ghcr.io/home-assistant/base:latest
 
 # Install Node.js and npm
 RUN apk add --no-cache nodejs npm
@@ -9,7 +8,7 @@ WORKDIR /app
 
 # Copy package files and install dependencies
 COPY package.json ./
-RUN npm install --production
+RUN npm install --omit=dev
 
 # Copy application files
 COPY server.js ./

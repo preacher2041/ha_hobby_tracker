@@ -1,13 +1,13 @@
 const express  = require('express');
 const cors     = require('cors');
-const Database = require('better-sqlite3');
 const path     = require('path');
+const { DatabaseSync } = require('node:sqlite');
 
 const PORT    = 3737;
 const DB_PATH = '/data/hobby.db';
 
 // ── Database setup ─────────────────────────────────────────────────────────────
-const db = new Database(DB_PATH);
+const db = new DatabaseSync(DB_PATH);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS hobbies (
@@ -27,9 +27,6 @@ db.exec(`
 // Seed default hobbies if empty
 const count = db.prepare('SELECT COUNT(*) as c FROM hobbies').get();
 if (count.c === 0) {
-  const insertHobby = db.prepare('INSERT INTO hobbies (id, last_done) VALUES (?, 0)');
-  const insertTask  = db.prepare('INSERT INTO tasks (hobby_id, text, position) VALUES (?, ?, ?)');
-
   const defaults = {
     coding:     ['Set up auth flow', 'Wire up the API endpoint', 'Write the login page UI'],
     dnd:        ['Write the tavern encounter', 'Prep NPC motivations', 'Plan session hooks'],
@@ -37,14 +34,20 @@ if (count.c === 0) {
     homeassist: ['Set up energy dashboard', 'Automate morning lights', 'Fix sensor names'],
   };
 
-  const seedAll = db.transaction(() => {
+  db.exec('BEGIN');
+  try {
+    const insertHobby = db.prepare('INSERT INTO hobbies (id, last_done) VALUES (?, 0)');
+    const insertTask  = db.prepare('INSERT INTO tasks (hobby_id, text, position) VALUES (?, ?, ?)');
     for (const [id, tasks] of Object.entries(defaults)) {
       insertHobby.run(id);
       tasks.forEach((text, i) => insertTask.run(id, text, i));
     }
-  });
-  seedAll();
-  console.log('Seeded default hobbies and tasks');
+    db.exec('COMMIT');
+    console.log('Seeded default hobbies and tasks');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -132,13 +135,13 @@ app.delete('/tasks/:id', (req, res) => {
 // POST /hobbies/:id/log-task/:taskId — log session and delete completed task
 app.post('/hobbies/:id/log-task/:taskId', (req, res) => {
   try {
-    const logAndDelete = db.transaction(() => {
-      db.prepare('UPDATE hobbies SET last_done = ? WHERE id = ?').run(Date.now(), req.params.id);
-      db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.taskId);
-    });
-    logAndDelete();
+    db.exec('BEGIN');
+    db.prepare('UPDATE hobbies SET last_done = ? WHERE id = ?').run(Date.now(), req.params.id);
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.taskId);
+    db.exec('COMMIT');
     res.json({ ok: true });
   } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
     console.error(e);
     res.status(500).json({ error: e.message });
   }
