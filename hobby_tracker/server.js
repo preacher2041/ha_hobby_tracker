@@ -1,5 +1,4 @@
 const express  = require('express');
-const cors     = require('cors');
 const path     = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
@@ -12,6 +11,9 @@ const db = new DatabaseSync(DB_PATH);
 db.exec(`
   CREATE TABLE IF NOT EXISTS hobbies (
     id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL DEFAULT '',
+    icon        TEXT NOT NULL DEFAULT '❓',
+    color       TEXT NOT NULL DEFAULT '#888888',
     last_done   INTEGER DEFAULT 0
   );
 
@@ -24,29 +26,67 @@ db.exec(`
   );
 `);
 
-// Seed default hobbies if empty
+// ── Migrations — add columns to existing installs ──────────────────────────────
+(function migrate() {
+  const cols = db.prepare("PRAGMA table_info(hobbies)").all().map(c => c.name);
+  if (!cols.includes('name'))  db.exec("ALTER TABLE hobbies ADD COLUMN name  TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes('icon'))  db.exec("ALTER TABLE hobbies ADD COLUMN icon  TEXT NOT NULL DEFAULT '❓'");
+  if (!cols.includes('color')) db.exec("ALTER TABLE hobbies ADD COLUMN color TEXT NOT NULL DEFAULT '#888888'");
+})();
+
+// ── Seed default hobbies if empty ──────────────────────────────────────────────
 const count = db.prepare('SELECT COUNT(*) as c FROM hobbies').get();
 if (count.c === 0) {
-  const defaults = {
-    coding:     ['Set up auth flow', 'Wire up the API endpoint', 'Write the login page UI'],
-    dnd:        ['Write the tavern encounter', 'Prep NPC motivations', 'Plan session hooks'],
-    warhammer:  ['Basecoat 5 Guardsmen boots', 'Wash the armour panels', 'Highlight 3 Marines'],
-    homeassist: ['Set up energy dashboard', 'Automate morning lights', 'Fix sensor names'],
-  };
+  const defaults = [
+    {
+      id: 'coding', name: 'Side Projects', icon: '💻', color: '#7b6ef6',
+      tasks: ['Set up auth flow', 'Wire up the API endpoint', 'Write the login page UI'],
+    },
+    {
+      id: 'dnd', name: 'D&D Prep', icon: '🐉', color: '#60c080',
+      tasks: ['Write the tavern encounter', 'Prep NPC motivations', 'Plan session hooks'],
+    },
+    {
+      id: 'warhammer', name: 'Warhammer', icon: '🎨', color: '#e06060',
+      tasks: ['Basecoat 5 Guardsmen boots', 'Wash the armour panels', 'Highlight 3 Marines'],
+    },
+    {
+      id: 'homeassist', name: 'Home Assistant', icon: '🏠', color: '#60b8f0',
+      tasks: ['Set up energy dashboard', 'Automate morning lights', 'Fix sensor names'],
+    },
+  ];
 
   db.exec('BEGIN');
   try {
-    const insertHobby = db.prepare('INSERT INTO hobbies (id, last_done) VALUES (?, 0)');
-    const insertTask  = db.prepare('INSERT INTO tasks (hobby_id, text, position) VALUES (?, ?, ?)');
-    for (const [id, tasks] of Object.entries(defaults)) {
-      insertHobby.run(id);
-      tasks.forEach((text, i) => insertTask.run(id, text, i));
+    const insertHobby = db.prepare(
+      'INSERT INTO hobbies (id, name, icon, color, last_done) VALUES (?, ?, ?, ?, 0)'
+    );
+    const insertTask = db.prepare(
+      'INSERT INTO tasks (hobby_id, text, position) VALUES (?, ?, ?)'
+    );
+    for (const h of defaults) {
+      insertHobby.run(h.id, h.name, h.icon, h.color);
+      h.tasks.forEach((text, i) => insertTask.run(h.id, text, i));
     }
     db.exec('COMMIT');
     console.log('Seeded default hobbies and tasks');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  }
+} else {
+  // Backfill name/icon/color for rows seeded before the migration
+  const META = {
+    coding:     { name: 'Side Projects',  icon: '💻', color: '#7b6ef6' },
+    dnd:        { name: 'D&D Prep',       icon: '🐉', color: '#60c080' },
+    warhammer:  { name: 'Warhammer',      icon: '🎨', color: '#e06060' },
+    homeassist: { name: 'Home Assistant', icon: '🏠', color: '#60b8f0' },
+  };
+  const backfill = db.prepare(
+    "UPDATE hobbies SET name=?, icon=?, color=? WHERE id=? AND (name='' OR name IS NULL)"
+  );
+  for (const [id, m] of Object.entries(META)) {
+    backfill.run(m.name, m.icon, m.color, id);
   }
 }
 
@@ -57,6 +97,9 @@ function getAllData() {
 
   return hobbies.map(h => ({
     id:       h.id,
+    name:     h.name,
+    icon:     h.icon,
+    color:    h.color,
     lastDone: h.last_done,
     tasks:    tasks.filter(t => t.hobby_id === h.id).map(t => ({ id: t.id, text: t.text })),
   }));
@@ -64,75 +107,128 @@ function getAllData() {
 
 // ── Express app ────────────────────────────────────────────────────────────────
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-// Serve the UI — ingress panel loads this at the root
+// Ingress IP restriction — only allow requests from the Supervisor proxy
+app.use((req, res, next) => {
+  const ip = req.socket.remoteAddress;
+  if (ip !== '172.30.32.2' && ip !== '::ffff:172.30.32.2') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+});
+
+// Serve the UI
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// GET /hobbies — all hobbies with tasks and last-done timestamps
+// GET /hobbies
 app.get('/hobbies', (req, res) => {
+  try { res.json(getAllData()); }
+  catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+// POST /hobbies — create a new hobby
+app.post('/hobbies', (req, res) => {
   try {
-    res.json(getAllData());
+    const { id, name, icon, color } = req.body;
+    if (!id   || !id.trim())   return res.status(400).json({ error: 'id is required' });
+    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+
+    const safeId    = id.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    const safeName  = name.trim();
+    const safeIcon  = (icon  || '❓').trim();
+    const safeColor = (color || '#888888').trim();
+
+    if (db.prepare('SELECT id FROM hobbies WHERE id = ?').get(safeId)) {
+      return res.status(409).json({ error: 'A hobby with that id already exists' });
+    }
+
+    db.prepare(
+      'INSERT INTO hobbies (id, name, icon, color, last_done) VALUES (?, ?, ?, ?, 0)'
+    ).run(safeId, safeName, safeIcon, safeColor);
+
+    res.json({ id: safeId, name: safeName, icon: safeIcon, color: safeColor, lastDone: 0, tasks: [] });
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /hobbies/:id — update name, icon, color
+app.patch('/hobbies/:id', (req, res) => {
+  try {
+    const hobby = db.prepare('SELECT * FROM hobbies WHERE id = ?').get(req.params.id);
+    if (!hobby) return res.status(404).json({ error: 'Hobby not found' });
+
+    const name  = (req.body.name  !== undefined ? req.body.name  : hobby.name).trim();
+    const icon  = (req.body.icon  !== undefined ? req.body.icon  : hobby.icon).trim();
+    const color = (req.body.color !== undefined ? req.body.color : hobby.color).trim();
+
+    if (!name) return res.status(400).json({ error: 'name cannot be empty' });
+
+    db.prepare('UPDATE hobbies SET name=?, icon=?, color=? WHERE id=?').run(name, icon, color, req.params.id);
+    res.json({ ok: true, id: req.params.id, name, icon, color });
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /hobbies/:id — cascade delete hobby and all its tasks
+app.delete('/hobbies/:id', (req, res) => {
+  try {
+    if (!db.prepare('SELECT id FROM hobbies WHERE id = ?').get(req.params.id)) {
+      return res.status(404).json({ error: 'Hobby not found' });
+    }
+    db.exec('BEGIN');
+    db.prepare('DELETE FROM tasks   WHERE hobby_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM hobbies WHERE id = ?').run(req.params.id);
+    db.exec('COMMIT');
+    res.json({ ok: true });
   } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// POST /hobbies/:id/log — mark a session as done now
+// POST /hobbies/:id/log
 app.post('/hobbies/:id/log', (req, res) => {
   try {
     db.prepare('UPDATE hobbies SET last_done = ? WHERE id = ?').run(Date.now(), req.params.id);
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// POST /hobbies/:id/tasks — add a task
+// POST /hobbies/:id/tasks
 app.post('/hobbies/:id/tasks', (req, res) => {
   try {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
     const maxPos = db.prepare('SELECT MAX(position) as m FROM tasks WHERE hobby_id = ?').get(req.params.id);
     const pos    = (maxPos.m ?? -1) + 1;
-    const result = db.prepare('INSERT INTO tasks (hobby_id, text, position) VALUES (?, ?, ?)').run(req.params.id, text.trim(), pos);
+    const result = db.prepare(
+      'INSERT INTO tasks (hobby_id, text, position) VALUES (?, ?, ?)'
+    ).run(req.params.id, text.trim(), pos);
     res.json({ id: result.lastInsertRowid, text: text.trim() });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// PATCH /tasks/:id — update task text
+// PATCH /tasks/:id
 app.patch('/tasks/:id', (req, res) => {
   try {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'text is required' });
     db.prepare('UPDATE tasks SET text = ? WHERE id = ?').run(text.trim(), req.params.id);
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// DELETE /tasks/:id — delete a task
+// DELETE /tasks/:id
 app.delete('/tasks/:id', (req, res) => {
   try {
     db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-// POST /hobbies/:id/log-task/:taskId — log session and delete completed task
+// POST /hobbies/:id/log-task/:taskId
 app.post('/hobbies/:id/log-task/:taskId', (req, res) => {
   try {
     db.exec('BEGIN');
